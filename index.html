@@ -21,15 +21,39 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
 .lock-error { color: #ef9a9a; font-size: 13px; margin-top: 10px; min-height: 18px; }
 .app { display: none; }
 .app.show { display: block; }
-.top-title { text-align: center; padding: 20px 0 16px; }
+.page { display: none; }
+.page.active { display: block; }
+.top-title { text-align: center; padding: 16px 0 12px; }
 .top-title .badge { display: inline-block; border: 1px solid #1D9E75; color: #1D9E75; font-size: 9px; font-weight: 700; padding: 2px 8px; border-radius: 99px; letter-spacing: 0.1em; margin-bottom: 6px; text-shadow: 0 0 6px #1D9E75; box-shadow: 0 0 8px rgba(29,158,117,0.4); }
 .top-title .title { font-size: 16px; font-weight: 700; text-shadow: 0 0 10px rgba(29,158,117,0.8); }
-.placeholder { text-align: center; padding: 60px 20px; color: rgba(255,255,255,0.4); font-size: 14px; line-height: 1.8; }
+.top-cards { display: flex; flex-direction: column; gap: 12px; }
+.top-card { background: rgba(255,255,255,0.05); border-radius: 16px; border: 1px solid rgba(255,255,255,0.08); padding: 20px; display: flex; align-items: center; gap: 16px; cursor: pointer; }
+.top-card:active { opacity: 0.75; }
+.top-card .icon { width: 50px; height: 50px; border-radius: 14px; display: flex; align-items: center; justify-content: center; font-size: 24px; flex-shrink: 0; }
+.top-card .icon.green { background: rgba(29,158,117,0.2); }
+.top-card .icon.gray { background: rgba(255,255,255,0.08); }
+.top-card .card-text h3 { font-size: 16px; font-weight: 600; margin-bottom: 3px; }
+.top-card .card-text p { font-size: 12px; color: rgba(255,255,255,0.4); }
+.top-card .arr { margin-left: auto; color: rgba(255,255,255,0.3); font-size: 22px; }
+h2 { font-size: 17px; font-weight: 600; margin-bottom: 16px; padding-top: 8px; }
+.btn-back { background: none; border: none; color: #1D9E75; font-size: 15px; font-weight: 600; padding: 8px 0; margin-bottom: 12px; cursor: pointer; }
+.section { margin-bottom: 14px; }
+label { display: block; font-size: 12px; color: rgba(255,255,255,0.5); margin-bottom: 5px; font-weight: 500; }
+input { width: 100%; padding: 13px 14px; border: 1px solid rgba(29,158,117,0.3); border-radius: 12px; background: rgba(255,255,255,0.06); color: #fff; font-size: 16px; font-family: inherit; }
+input:focus { outline: none; border-color: #1D9E75; }
+.rate-item { display: flex; gap: 8px; align-items: center; margin-bottom: 10px; }
+.rate-name { flex: 1; font-size: 15px; font-weight: 500; }
+.rate-input { width: 130px; }
+.btn { width: 100%; padding: 14px; border-radius: 12px; cursor: pointer; font-size: 15px; font-weight: 600; border: none; background: #1D9E75; color: #fff; margin-top: 8px; }
+.btn:active { opacity: 0.8; }
+.loading { text-align: center; padding: 40px 0; color: #1D9E75; font-size: 14px; }
+.toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); padding: 12px 28px; border-radius: 99px; font-size: 14px; opacity: 0; transition: opacity 0.3s; pointer-events: none; z-index: 999; color: #fff; background: #1D9E75; }
+.toast.show { opacity: 1; }
+.placeholder { text-align: center; padding: 50px 20px; color: rgba(255,255,255,0.4); font-size: 14px; line-height: 1.8; }
 </style>
 </head>
 <body>
 
-<!-- パスワード画面 -->
 <div class="lock-screen" id="lockScreen">
   <div class="lock-icon">🔒</div>
   <div class="lock-title">請求書作成ツール</div>
@@ -39,22 +63,65 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
   <div class="lock-error" id="lockError"></div>
 </div>
 
-<!-- アプリ本体 -->
 <div class="app" id="app">
-  <div class="container">
-    <div class="top-title">
-      <div class="badge">⚡ ELECTRICAL WORK</div>
-      <div class="title">請求書作成ツール</div>
+  <!-- トップ -->
+  <div class="page active" id="topPage">
+    <div class="container">
+      <div class="top-title">
+        <div class="badge">⚡ ELECTRICAL WORK</div>
+        <div class="title">請求書作成ツール</div>
+      </div>
+      <div class="top-cards">
+        <div class="top-card" onclick="showPage('createPage')">
+          <div class="icon green">📄</div>
+          <div class="card-text">
+            <h3>請求書を作成</h3>
+            <p>月を選んで請求書を作成</p>
+          </div>
+          <div class="arr">›</div>
+        </div>
+        <div class="top-card" onclick="showRates()">
+          <div class="icon gray">💰</div>
+          <div class="card-text">
+            <h3>人工単価の設定</h3>
+            <p>作業者ごとの単価を登録</p>
+          </div>
+          <div class="arr">›</div>
+        </div>
+      </div>
     </div>
-    <div class="placeholder">
-      ロック解除に成功しました！<br><br>
-      ここに請求書作成機能を<br>これから追加していきます😊
+  </div>
+
+  <!-- 人工単価設定 -->
+  <div class="page" id="ratePage">
+    <div class="container">
+      <button class="btn-back" onclick="showPage('topPage')">← 戻る</button>
+      <h2>人工単価の設定</h2>
+      <div id="rateList"><div class="loading">読み込み中...</div></div>
+      <button class="btn" onclick="saveRates()">単価を保存</button>
+    </div>
+  </div>
+
+  <!-- 請求書作成 -->
+  <div class="page" id="createPage">
+    <div class="container">
+      <button class="btn-back" onclick="showPage('topPage')">← 戻る</button>
+      <h2>請求書を作成</h2>
+      <div class="placeholder">
+        請求書作成機能は<br>次のステップで追加します😊
+      </div>
     </div>
   </div>
 </div>
 
+<div class="toast" id="toast"></div>
+
 <script>
 const PASSWORD = 'denki2026';
+const GAS_URL = 'https://script.google.com/macros/s/AKfycbyFkpTdMK815NKHOgawnBzSs6CYLKudXZMunQsD2aBZG0d6FsdDZWmWIwhuii7S-AEy/exec';
+
+let workers = [];
+let rates = {};
 
 function checkPassword() {
   const input = document.getElementById('pwInput').value;
@@ -72,9 +139,64 @@ function showApp() {
   document.getElementById('app').classList.add('show');
 }
 
-// セッション中は再入力不要
 if (sessionStorage.getItem('invoice_unlocked') === 'yes') {
   showApp();
+}
+
+function showPage(id) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  window.scrollTo(0, 0);
+}
+
+async function showRates() {
+  showPage('ratePage');
+  document.getElementById('rateList').innerHTML = '<div class="loading">読み込み中...</div>';
+  try {
+    const [wRes, rRes] = await Promise.all([
+      fetch(GAS_URL + '?type=workers'),
+      fetch(GAS_URL + '?type=rates')
+    ]);
+    const wData = await wRes.json();
+    const rData = await rRes.json();
+    if (wData.status === 'ok') workers = wData.data;
+    if (rData.status === 'ok') rates = rData.data;
+  } catch(e) {
+    showToast('読み込みに失敗しました');
+  }
+  renderRates();
+}
+
+function renderRates() {
+  const el = document.getElementById('rateList');
+  if (workers.length === 0) {
+    el.innerHTML = '<div class="placeholder">作業者が登録されていません<br>日報アプリで作業者を登録してください</div>';
+    return;
+  }
+  el.innerHTML = workers.map(w => `
+    <div class="rate-item">
+      <div class="rate-name">${w}</div>
+      <input type="number" class="rate-input" id="rate-${w}" value="${rates[w] || ''}" placeholder="単価">
+    </div>
+  `).join('');
+}
+
+async function saveRates() {
+  for (const w of workers) {
+    const val = document.getElementById(`rate-${w}`).value;
+    if (val) {
+      try {
+        await fetch(`${GAS_URL}?type=setRate&worker=${encodeURIComponent(w)}&rate=${encodeURIComponent(val)}`);
+      } catch(e) {}
+    }
+  }
+  showToast('単価を保存しました');
+}
+
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2000);
 }
 </script>
 </body>
