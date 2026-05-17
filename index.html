@@ -17,7 +17,6 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
 .lock-sub { font-size: 13px; color: rgba(255,255,255,0.4); margin-bottom: 24px; }
 .lock-input { width: 100%; max-width: 280px; padding: 14px; border: 1px solid rgba(29,158,117,0.4); border-radius: 12px; background: rgba(255,255,255,0.08); color: #fff; font-size: 16px; text-align: center; margin-bottom: 12px; }
 .lock-btn { width: 100%; max-width: 280px; padding: 14px; border-radius: 12px; border: none; background: #1D9E75; color: #fff; font-size: 15px; font-weight: 600; cursor: pointer; }
-.lock-btn:active { opacity: 0.8; }
 .lock-error { color: #ef9a9a; font-size: 13px; margin-top: 10px; min-height: 18px; }
 .app { display: none; }
 .app.show { display: block; }
@@ -46,10 +45,28 @@ input:focus { outline: none; border-color: #1D9E75; }
 .rate-input { width: 130px; }
 .btn { width: 100%; padding: 14px; border-radius: 12px; cursor: pointer; font-size: 15px; font-weight: 600; border: none; background: #1D9E75; color: #fff; margin-top: 8px; }
 .btn:active { opacity: 0.8; }
+.btn.sub { background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15); }
 .loading { text-align: center; padding: 40px 0; color: #1D9E75; font-size: 14px; }
 .toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); padding: 12px 28px; border-radius: 99px; font-size: 14px; opacity: 0; transition: opacity 0.3s; pointer-events: none; z-index: 999; color: #fff; background: #1D9E75; }
 .toast.show { opacity: 1; }
 .placeholder { text-align: center; padding: 50px 20px; color: rgba(255,255,255,0.4); font-size: 14px; line-height: 1.8; }
+.month-selector { display: flex; align-items: center; justify-content: center; gap: 16px; margin-bottom: 16px; }
+.nav-btn { background: rgba(255,255,255,0.08); border: 1px solid rgba(29,158,117,0.4); border-radius: 10px; width: 40px; height: 40px; cursor: pointer; font-size: 18px; color: #1D9E75; }
+.month-label { font-size: 17px; font-weight: 600; min-width: 120px; text-align: center; }
+.site-group { background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); border-radius: 14px; padding: 14px; margin-bottom: 12px; }
+.site-name { font-size: 15px; font-weight: 700; color: #4ecca3; margin-bottom: 10px; }
+.detail-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.detail-label { flex: 1; font-size: 13px; }
+.detail-qty { width: 54px; }
+.detail-price { width: 90px; }
+.detail-amount { width: 90px; text-align: right; font-size: 13px; font-weight: 600; color: #4ecca3; }
+.detail-row input { padding: 8px; font-size: 14px; text-align: right; }
+.material-add { font-size: 12px; color: #1D9E75; cursor: pointer; padding: 6px 0; }
+.summary { background: rgba(29,158,117,0.1); border: 1px solid rgba(29,158,117,0.3); border-radius: 12px; padding: 14px 16px; margin-top: 16px; }
+.summary-row { display: flex; justify-content: space-between; padding: 4px 0; font-size: 13px; }
+.summary-row.total { border-top: 1px solid rgba(29,158,117,0.3); margin-top: 8px; padding-top: 10px; font-size: 16px; }
+.summary-row.total .v { color: #4ecca3; font-weight: 700; }
+.del-x { background: none; border: none; color: #ef9a9a; font-size: 16px; cursor: pointer; padding: 4px; }
 </style>
 </head>
 <body>
@@ -64,7 +81,6 @@ input:focus { outline: none; border-color: #1D9E75; }
 </div>
 
 <div class="app" id="app">
-  <!-- トップ -->
   <div class="page active" id="topPage">
     <div class="container">
       <div class="top-title">
@@ -72,7 +88,7 @@ input:focus { outline: none; border-color: #1D9E75; }
         <div class="title">請求書作成ツール</div>
       </div>
       <div class="top-cards">
-        <div class="top-card" onclick="showPage('createPage')">
+        <div class="top-card" onclick="startCreate()">
           <div class="icon green">📄</div>
           <div class="card-text">
             <h3>請求書を作成</h3>
@@ -92,7 +108,6 @@ input:focus { outline: none; border-color: #1D9E75; }
     </div>
   </div>
 
-  <!-- 人工単価設定 -->
   <div class="page" id="ratePage">
     <div class="container">
       <button class="btn-back" onclick="showPage('topPage')">← 戻る</button>
@@ -102,14 +117,16 @@ input:focus { outline: none; border-color: #1D9E75; }
     </div>
   </div>
 
-  <!-- 請求書作成 -->
   <div class="page" id="createPage">
     <div class="container">
       <button class="btn-back" onclick="showPage('topPage')">← 戻る</button>
       <h2>請求書を作成</h2>
-      <div class="placeholder">
-        請求書作成機能は<br>次のステップで追加します😊
+      <div class="month-selector">
+        <button class="nav-btn" onclick="changeMonth(-1)">‹</button>
+        <div class="month-label" id="monthLabel"></div>
+        <button class="nav-btn" onclick="changeMonth(1)">›</button>
       </div>
+      <div id="createContent"><div class="loading">読み込み中...</div></div>
     </div>
   </div>
 </div>
@@ -122,6 +139,9 @@ const GAS_URL = 'https://script.google.com/macros/s/AKfycbyFkpTdMK815NKHOgawnBzS
 
 let workers = [];
 let rates = {};
+let allReports = [];
+let current = new Date();
+let materials = {};
 
 function checkPassword() {
   const input = document.getElementById('pwInput').value;
@@ -139,9 +159,7 @@ function showApp() {
   document.getElementById('app').classList.add('show');
 }
 
-if (sessionStorage.getItem('invoice_unlocked') === 'yes') {
-  showApp();
-}
+if (sessionStorage.getItem('invoice_unlocked') === 'yes') showApp();
 
 function showPage(id) {
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
@@ -161,16 +179,14 @@ async function showRates() {
     const rData = await rRes.json();
     if (wData.status === 'ok') workers = wData.data;
     if (rData.status === 'ok') rates = rData.data;
-  } catch(e) {
-    showToast('読み込みに失敗しました');
-  }
+  } catch(e) { showToast('読み込みに失敗しました'); }
   renderRates();
 }
 
 function renderRates() {
   const el = document.getElementById('rateList');
   if (workers.length === 0) {
-    el.innerHTML = '<div class="placeholder">作業者が登録されていません<br>日報アプリで作業者を登録してください</div>';
+    el.innerHTML = '<div class="placeholder">作業者が登録されていません</div>';
     return;
   }
   el.innerHTML = workers.map(w => `
@@ -185,12 +201,147 @@ async function saveRates() {
   for (const w of workers) {
     const val = document.getElementById(`rate-${w}`).value;
     if (val) {
-      try {
-        await fetch(`${GAS_URL}?type=setRate&worker=${encodeURIComponent(w)}&rate=${encodeURIComponent(val)}`);
-      } catch(e) {}
+      try { await fetch(`${GAS_URL}?type=setRate&worker=${encodeURIComponent(w)}&rate=${encodeURIComponent(val)}`); } catch(e) {}
     }
   }
   showToast('単価を保存しました');
+}
+
+async function startCreate() {
+  showPage('createPage');
+  document.getElementById('createContent').innerHTML = '<div class="loading">読み込み中...</div>';
+  try {
+    const [rRes, rateRes] = await Promise.all([
+      fetch(GAS_URL + '?type=reports'),
+      fetch(GAS_URL + '?type=rates')
+    ]);
+    const rData = await rRes.json();
+    const rateData = await rateRes.json();
+    if (rData.status === 'ok') allReports = rData.data;
+    if (rateData.status === 'ok') rates = rateData.data;
+  } catch(e) { showToast('読み込みに失敗しました'); }
+  renderCreate();
+}
+
+function changeMonth(diff) {
+  current = new Date(current.getFullYear(), current.getMonth() + diff, 1);
+  renderCreate();
+}
+
+function renderCreate() {
+  const y = current.getFullYear();
+  const m = current.getMonth() + 1;
+  document.getElementById('monthLabel').textContent = `${y}年${m}月`;
+  const monthStr = `${y}-${String(m).padStart(2,'0')}`;
+
+  const monthData = allReports.filter(r => String(r.date || '').startsWith(monthStr));
+
+  if (monthData.length === 0) {
+    document.getElementById('createContent').innerHTML = '<div class="placeholder">この月の日報データはありません</div>';
+    return;
+  }
+
+  // 現場ごとに集計
+  const siteMap = {};
+  monthData.forEach(row => {
+    const site = row.site || '';
+    if (!siteMap[site]) siteMap[site] = { workers: {}, parking: 0, highway: 0 };
+    const ws = row.workers ? String(row.workers).split('、') : [];
+    ws.forEach(w => {
+      w = w.trim();
+      if (!w) return;
+      if (!siteMap[site].workers[w]) siteMap[site].workers[w] = 0;
+      siteMap[site].workers[w]++;
+    });
+    siteMap[site].parking += Number(row.parking) || 0;
+    siteMap[site].highway += Number(row.highway) || 0;
+  });
+
+  let html = '';
+  Object.entries(siteMap).forEach(([site, data]) => {
+    html += `<div class="site-group"><div class="site-name">${site}</div>`;
+    // 作業者ごと
+    Object.entries(data.workers).forEach(([worker, days]) => {
+      const rate = rates[worker] || 0;
+      const amount = days * rate;
+      html += `
+        <div class="detail-row" data-site="${site}" data-type="worker" data-worker="${worker}">
+          <div class="detail-label">${worker}</div>
+          <input type="number" class="detail-qty" value="${days}" onchange="calcAll()">
+          <input type="number" class="detail-price" value="${rate}" onchange="calcAll()">
+          <div class="detail-amount">${amount.toLocaleString()}</div>
+        </div>`;
+    });
+    // 駐車場代
+    html += `
+      <div class="detail-row" data-site="${site}" data-type="parking">
+        <div class="detail-label">駐車場代</div>
+        <input type="number" class="detail-price" style="width:90px;" value="${data.parking}" onchange="calcAll()">
+        <div class="detail-amount" id="pk-${site}">${data.parking.toLocaleString()}</div>
+      </div>`;
+    // 高速代
+    html += `
+      <div class="detail-row" data-site="${site}" data-type="highway">
+        <div class="detail-label">高速代</div>
+        <input type="number" class="detail-price" style="width:90px;" value="${data.highway}" onchange="calcAll()">
+        <div class="detail-amount" id="hw-${site}">${data.highway.toLocaleString()}</div>
+      </div>`;
+    // 材料費エリア
+    html += `<div id="mat-${site}"></div>`;
+    html += `<div class="material-add" onclick="addMaterial('${site}')">＋ 材料費を追加</div>`;
+    html += `</div>`;
+  });
+
+  html += `
+    <div class="summary">
+      <div class="summary-row"><div>小計</div><div class="v" id="subtotal">0円</div></div>
+      <div class="summary-row"><div>消費税（10%）</div><div class="v" id="tax">0円</div></div>
+      <div class="summary-row total"><div>ご請求金額</div><div class="v" id="grand">0円</div></div>
+    </div>
+    <button class="btn" onclick="alert('PDF出力は次のステップで追加します')">請求書をプレビュー</button>
+  `;
+
+  document.getElementById('createContent').innerHTML = html;
+  calcAll();
+}
+
+function addMaterial(site) {
+  const container = document.getElementById(`mat-${site}`);
+  const div = document.createElement('div');
+  div.className = 'detail-row';
+  div.setAttribute('data-site', site);
+  div.setAttribute('data-type', 'material');
+  div.innerHTML = `
+    <input type="text" class="detail-label" style="text-align:left;" placeholder="材料費の名目">
+    <input type="number" class="detail-price" style="width:90px;" placeholder="金額" onchange="calcAll()">
+    <button class="del-x" onclick="this.parentElement.remove();calcAll()">✕</button>
+  `;
+  container.appendChild(div);
+}
+
+function calcAll() {
+  let subtotal = 0;
+  document.querySelectorAll('.detail-row').forEach(row => {
+    const type = row.getAttribute('data-type');
+    if (type === 'worker') {
+      const qty = Number(row.querySelector('.detail-qty').value) || 0;
+      const price = Number(row.querySelector('.detail-price').value) || 0;
+      const amount = qty * price;
+      row.querySelector('.detail-amount').textContent = amount.toLocaleString();
+      subtotal += amount;
+    } else if (type === 'parking' || type === 'highway') {
+      const price = Number(row.querySelector('.detail-price').value) || 0;
+      row.querySelector('.detail-amount').textContent = price.toLocaleString();
+      subtotal += price;
+    } else if (type === 'material') {
+      const price = Number(row.querySelector('.detail-price').value) || 0;
+      subtotal += price;
+    }
+  });
+  const tax = Math.floor(subtotal * 0.1);
+  document.getElementById('subtotal').textContent = subtotal.toLocaleString() + '円';
+  document.getElementById('tax').textContent = tax.toLocaleString() + '円';
+  document.getElementById('grand').textContent = (subtotal + tax).toLocaleString() + '円';
 }
 
 function showToast(msg) {
