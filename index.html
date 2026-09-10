@@ -166,6 +166,11 @@ let allReports = [];
 let current = new Date();
 let invoiceItems = [];
 
+// innerHTML に値を差し込む前に必ず通す（現場名や作業者名に ' " < > & が入っても壊れないようにするため）
+function escHtml(v) {
+  return String(v == null ? '' : v).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
 function checkPassword() {
   const input = document.getElementById('pwInput').value;
   if (input === PASSWORD) {
@@ -212,22 +217,30 @@ function renderRates() {
     el.innerHTML = '<div class="placeholder">作業者が登録されていません</div>';
     return;
   }
-  el.innerHTML = workers.map(w => `
+  // id に作業者名をそのまま使うと名前次第で壊れるため、通し番号にする
+  el.innerHTML = workers.map((w, i) => `
     <div class="rate-item">
-      <div class="rate-name">${w}</div>
-      <input type="number" class="rate-input" id="rate-${w}" value="${rates[w] || ''}" placeholder="単価">
+      <div class="rate-name">${escHtml(w)}</div>
+      <input type="number" class="rate-input" id="rate-${i}" value="${escHtml(rates[w] || '')}" placeholder="単価">
     </div>
   `).join('');
 }
 
 async function saveRates() {
-  for (const w of workers) {
-    const val = document.getElementById(`rate-${w}`).value;
-    if (val) {
-      try { await fetch(`${GAS_URL}?type=setRate&worker=${encodeURIComponent(w)}&rate=${encodeURIComponent(val)}`); } catch(e) {}
-    }
+  let failed = 0;
+  for (let i = 0; i < workers.length; i++) {
+    const w = workers[i];
+    const el = document.getElementById(`rate-${i}`);
+    const val = el ? el.value : '';
+    if (!val) continue;
+    try {
+      const res = await fetch(`${GAS_URL}?type=setRate&worker=${encodeURIComponent(w)}&rate=${encodeURIComponent(val)}`);
+      const result = await res.json();
+      if (result.status !== 'ok') { failed++; continue; }
+      rates[w] = Number(val);
+    } catch(e) { failed++; }
   }
-  showToast('単価を保存しました');
+  showToast(failed ? `${failed}件の単価を保存できませんでした` : '単価を保存しました');
 }
 
 async function startCreate() {
@@ -279,33 +292,34 @@ function renderCreate() {
   });
 
   let html = '';
-  Object.entries(siteMap).forEach(([site, data]) => {
-    html += `<div class="site-group"><div class="site-name">${site}</div>`;
+  Object.entries(siteMap).forEach(([site, data], si) => {
+    html += `<div class="site-group"><div class="site-name">${escHtml(site)}</div>`;
     Object.entries(data.workers).forEach(([worker, days]) => {
       const rate = rates[worker] || 0;
       const amount = days * rate;
       html += `
-        <div class="detail-row" data-site="${site}" data-type="worker" data-worker="${worker}">
-          <div class="detail-label">${worker}</div>
+        <div class="detail-row" data-site="${escHtml(site)}" data-type="worker" data-worker="${escHtml(worker)}">
+          <div class="detail-label">${escHtml(worker)}</div>
           <input type="number" class="detail-qty" value="${days}" onchange="calcAll()">
           <input type="number" class="detail-price" value="${rate}" onchange="calcAll()">
           <div class="detail-amount">${amount.toLocaleString()}</div>
         </div>`;
     });
     html += `
-      <div class="detail-row" data-site="${site}" data-type="parking">
+      <div class="detail-row" data-site="${escHtml(site)}" data-type="parking">
         <div class="detail-label">駐車場代</div>
         <input type="number" class="detail-price" value="${data.parking}" onchange="calcAll()">
         <div class="detail-amount">${data.parking.toLocaleString()}</div>
       </div>`;
     html += `
-      <div class="detail-row" data-site="${site}" data-type="highway">
+      <div class="detail-row" data-site="${escHtml(site)}" data-type="highway">
         <div class="detail-label">高速代</div>
         <input type="number" class="detail-price" value="${data.highway}" onchange="calcAll()">
         <div class="detail-amount">${data.highway.toLocaleString()}</div>
       </div>`;
-    html += `<div id="mat-${site}"></div>`;
-    html += `<div class="material-add" onclick="addMaterial('${site}')">＋ 材料費を追加</div>`;
+    // id に現場名をそのまま使うと現場名次第で壊れるため、通し番号にする
+    html += `<div id="mat-${si}"></div>`;
+    html += `<div class="material-add" data-site="${escHtml(site)}" data-mat="${si}" onclick="addMaterial(this.dataset.site, this.dataset.mat)">＋ 材料費を追加</div>`;
     html += `</div>`;
   });
 
@@ -322,8 +336,9 @@ function renderCreate() {
   calcAll();
 }
 
-function addMaterial(site) {
-  const container = document.getElementById(`mat-${site}`);
+function addMaterial(site, matId) {
+  const container = document.getElementById(`mat-${matId}`);
+  if (!container) return;
   const div = document.createElement('div');
   div.className = 'detail-row';
   div.setAttribute('data-site', site);
@@ -407,6 +422,8 @@ function generatePDF() {
     bNum: document.getElementById('bNum').value,
     bHolder: document.getElementById('bHolder').value,
   };
+  // 以降そのまま印刷用HTMLへ差し込むので、まとめてエスケープしておく
+  Object.keys(company).forEach(k => { company[k] = escHtml(company[k]); });
 
   let subtotal = 0;
   invoiceItems.forEach(i => subtotal += i.qty * i.price);
@@ -423,8 +440,8 @@ function generatePDF() {
     itemRows += `
       <tr>
         <td style="border:1px solid #999;padding:3px 5px;text-align:center;">${no++}</td>
-        <td style="border:1px solid #999;padding:3px 5px;">${showSite ? item.site : ''}</td>
-        <td style="border:1px solid #999;padding:3px 5px;">${item.name}</td>
+        <td style="border:1px solid #999;padding:3px 5px;">${showSite ? escHtml(item.site) : ''}</td>
+        <td style="border:1px solid #999;padding:3px 5px;">${escHtml(item.name)}</td>
         <td style="border:1px solid #999;padding:3px 5px;text-align:center;">${item.qty}</td>
         <td style="border:1px solid #999;padding:3px 5px;text-align:right;">${item.price.toLocaleString()}</td>
         <td style="border:1px solid #999;padding:3px 5px;text-align:right;">${amount.toLocaleString()}</td>
@@ -505,6 +522,11 @@ function generatePDF() {
   `;
 
   const win = window.open('', '_blank');
+  // ポップアップがブロックされると win が null になり、以降で例外になって無反応だった
+  if (!win) {
+    showToast('ポップアップがブロックされました。ブラウザの設定で許可してください');
+    return;
+  }
   win.document.write(`
     <!DOCTYPE html>
     <html><head><meta charset="UTF-8"><title>請求書</title>
