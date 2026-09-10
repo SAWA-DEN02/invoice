@@ -148,7 +148,8 @@ input:focus { outline: none; border-color: #1D9E75; }
       <div class="section"><label>預金種別</label><input type="text" id="bType" placeholder="例：普通"></div>
       <div class="section"><label>口座番号</label><input type="text" id="bNum" placeholder="例：1234567"></div>
       <div class="section"><label>口座名義</label><input type="text" id="bHolder" placeholder="例：カ）〇〇"></div>
-      <button class="btn" onclick="generatePDF()">請求書をプレビュー</button>
+      <button class="btn" onclick="generateExcel()">📄 Excelひな形に書き出す</button>
+      <button class="btn sub" onclick="generatePDF()">プレビュー（画面で確認・印刷）</button>
     </div>
   </div>
 </div>
@@ -381,22 +382,24 @@ function goToInfo() {
   document.querySelectorAll('.detail-row').forEach(row => {
     const type = row.getAttribute('data-type');
     const site = row.getAttribute('data-site');
+    // kind と worker は Excel ひな形への書き出しで使う。
+    // ひな形では人工の行だけ数量・単価を入れ、実費の行は合計欄に金額を直接入れるため。
     if (type === 'worker') {
       const worker = row.getAttribute('data-worker');
       const qty = Number(row.querySelector('.detail-qty').value) || 0;
       const price = Number(row.querySelector('.detail-price').value) || 0;
-      if (qty > 0) invoiceItems.push({ site, name: `${worker}（人工）`, qty, price });
+      if (qty > 0) invoiceItems.push({ site, name: `${worker}（人工）`, qty, price, kind: 'worker', worker });
     } else if (type === 'parking') {
       const price = Number(row.querySelector('.detail-price').value) || 0;
-      if (price > 0) invoiceItems.push({ site, name: '駐車場代', qty: 1, price });
+      if (price > 0) invoiceItems.push({ site, name: '駐車場代', qty: 1, price, kind: 'parking' });
     } else if (type === 'highway') {
       const price = Number(row.querySelector('.detail-price').value) || 0;
-      if (price > 0) invoiceItems.push({ site, name: '高速代', qty: 1, price });
+      if (price > 0) invoiceItems.push({ site, name: '高速代', qty: 1, price, kind: 'highway' });
     } else if (type === 'material') {
       const nameEl = row.querySelector('.detail-label');
       const name = nameEl ? nameEl.value : '材料費';
       const price = Number(row.querySelector('.detail-price').value) || 0;
-      if (price > 0) invoiceItems.push({ site, name: name || '材料費', qty: 1, price });
+      if (price > 0) invoiceItems.push({ site, name: name || '材料費', qty: 1, price, kind: 'material' });
     }
   });
   if (invoiceItems.length === 0) { showToast('明細がありません'); return; }
@@ -405,8 +408,8 @@ function goToInfo() {
   document.getElementById('invMonth').value = `${m}月`;
 }
 
-function generatePDF() {
-  const company = {
+function collectCompany() {
+  return {
     month: document.getElementById('invMonth').value,
     date: document.getElementById('invDate').value,
     name: document.getElementById('cName').value,
@@ -422,6 +425,10 @@ function generatePDF() {
     bNum: document.getElementById('bNum').value,
     bHolder: document.getElementById('bHolder').value,
   };
+}
+
+function generatePDF() {
+  const company = collectCompany();
   // 以降そのまま印刷用HTMLへ差し込むので、まとめてエスケープしておく
   Object.keys(company).forEach(k => { company[k] = escHtml(company[k]); });
 
@@ -539,6 +546,133 @@ function generatePDF() {
     </body></html>
   `);
   win.document.close();
+}
+
+/* ---------- 取引先の Excel ひな形への書き出し ---------- */
+
+const EXCELJS_URL = 'https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js';
+const TPL_URL = 'template/harvest_template.xlsx';
+const TPL_SHEET = '応援　請求書　ひな形';
+
+// Harvest 指定請求書ひな形（応援）のセル位置。
+// 明細は 16〜50行の35行。D:日付 G:現場名 L:項目 S:数量 U:単価 Y:合計。
+const TPL = {
+  date: 'W2', company: 'W4', zip: 'X5', addr: 'W6',
+  tel: 'W10', mail: 'W11', invoice: 'X12',
+  month: 'C9', grandTop: 'G11',
+  rowFrom: 16, rowTo: 50,
+  cDate: 'D', cSite: 'G', cItem: 'L', cQty: 'S', cPrice: 'U', cAmount: 'Y',
+  subtotal: 'Y52', tax: 'Y53', grand: 'Y55',
+  bankName: 'H59', bankBranch: 'H61', bankType: 'H63', bankNum: 'H65', bankHolder: 'H67'
+};
+
+// ひな形の消費税の式は =Y52*1.1 になっている（正しくは =Y52*0.1）。
+// そのまま使うと請求額が小計の2.1倍になるので、式に頼らず金額を直接書き込む。
+function fillInvoiceSheet(ws, company, items) {
+  const maxRows = TPL.rowTo - TPL.rowFrom + 1;
+  if (items.length === 0) throw new Error('明細がありません');
+  if (items.length > maxRows) {
+    throw new Error(`明細が${items.length}行あり、ひな形の${maxRows}行に収まりません`);
+  }
+
+  ws.getCell(TPL.date).value = company.date || '';
+  ws.getCell(TPL.company).value = company.name || '';
+  ws.getCell(TPL.zip).value = company.zip || '';
+  ws.getCell(TPL.addr).value = company.addr || '';
+  ws.getCell(TPL.tel).value = company.tel || '';
+  ws.getCell(TPL.mail).value = company.mail || '';
+  ws.getCell(TPL.invoice).value = company.inv || '';
+  ws.getCell(TPL.month).value = (company.month || '') + '分';
+
+  let row = TPL.rowFrom;
+  let lastSite = null;
+  let subtotal = 0;
+  items.forEach(item => {
+    const isWork = item.kind === 'worker';
+    const amount = isWork ? item.qty * item.price : item.price;
+    subtotal += amount;
+    ws.getCell(TPL.cDate + row).value = null;
+    // 現場名は各現場の最初の行だけに出す
+    ws.getCell(TPL.cSite + row).value = item.site === lastSite ? null : item.site;
+    // 人工は（山田）の形。実費は数量・単価を空欄にして合計だけ入れる
+    ws.getCell(TPL.cItem + row).value = isWork ? `（${item.worker}）` : item.name;
+    ws.getCell(TPL.cQty + row).value = isWork ? item.qty : null;
+    ws.getCell(TPL.cPrice + row).value = isWork ? item.price : null;
+    ws.getCell(TPL.cAmount + row).value = amount;
+    lastSite = item.site;
+    row++;
+  });
+
+  // 使わない行は空にする。
+  // ひな形の合計欄は共有数式（Y16 が親で、以降の行はその複製）になっていて、
+  // 親の行だけ数値で上書きすると複製側が親を見失って保存に失敗するため、
+  // 明細範囲はすべて自前の値で置き換える。
+  for (let r = row; r <= TPL.rowTo; r++) {
+    [TPL.cDate, TPL.cSite, TPL.cItem, TPL.cQty, TPL.cPrice, TPL.cAmount]
+      .forEach(col => { ws.getCell(col + r).value = null; });
+  }
+
+  const tax = Math.floor(subtotal * 0.1);
+  const grand = subtotal + tax;
+  ws.getCell(TPL.subtotal).value = subtotal;
+  ws.getCell(TPL.tax).value = tax;
+  ws.getCell(TPL.grand).value = grand;
+  ws.getCell(TPL.grandTop).value = grand;
+
+  ws.getCell(TPL.bankName).value = company.bName || '';
+  ws.getCell(TPL.bankBranch).value = company.bBranch || '';
+  ws.getCell(TPL.bankType).value = company.bType || '';
+  ws.getCell(TPL.bankNum).value = company.bNum || '';
+  ws.getCell(TPL.bankHolder).value = company.bHolder || '';
+
+  return { rows: items.length, subtotal, tax, grand };
+}
+
+// 1MB ほどあるので、ボタンを押したときだけ読み込む
+function loadExcelJs() {
+  if (window.ExcelJS) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = EXCELJS_URL;
+    s.onload = resolve;
+    s.onerror = () => reject(new Error('Excel用ライブラリを読み込めませんでした（通信を確認してください）'));
+    document.head.appendChild(s);
+  });
+}
+
+function downloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+async function generateExcel() {
+  showToast('ひな形を読み込んでいます...');
+  try {
+    await loadExcelJs();
+    const res = await fetch(TPL_URL);
+    if (!res.ok) throw new Error('ひな形ファイルを読み込めませんでした');
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(await res.arrayBuffer());
+    const ws = wb.getWorksheet(TPL_SHEET);
+    if (!ws) throw new Error('ひな形のシートが見つかりません');
+
+    const info = fillInvoiceSheet(ws, collectCompany(), invoiceItems);
+    const out = await wb.xlsx.writeBuffer();
+    const y = current.getFullYear(), m = current.getMonth() + 1;
+    downloadBlob(
+      new Blob([out], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }),
+      `請求書_${y}年${m}月.xlsx`
+    );
+    showToast(`書き出しました（明細${info.rows}行 / ${info.grand.toLocaleString()}円）`);
+  } catch(e) {
+    showToast(e.message || '書き出しに失敗しました');
+  }
 }
 
 function showToast(msg) {
