@@ -167,6 +167,11 @@ let allReports = [];
 let current = new Date();
 let invoiceItems = [];
 
+// 駐車場代・高速代は立替えた実費なので、消費税をかけない。
+// 消費税は人工と材料費だけを対象にする。
+const TAX_FREE_KINDS = ['parking', 'highway'];
+function isTaxFree(kind) { return TAX_FREE_KINDS.indexOf(kind) >= 0; }
+
 // innerHTML に値を差し込む前に必ず通す（現場名や作業者名に ' " < > & が入っても壊れないようにするため）
 function escHtml(v) {
   return String(v == null ? '' : v).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -327,6 +332,7 @@ function renderCreate() {
   html += `
     <div class="summary">
       <div class="summary-row"><div>小計</div><div class="v" id="subtotal">0円</div></div>
+      <div class="summary-row"><div>うち非課税（駐車場代・高速代）</div><div class="v" id="taxfree">0円</div></div>
       <div class="summary-row"><div>消費税（10%）</div><div class="v" id="tax">0円</div></div>
       <div class="summary-row total"><div>ご請求金額</div><div class="v" id="grand">0円</div></div>
     </div>
@@ -354,25 +360,27 @@ function addMaterial(site, matId) {
 
 function calcAll() {
   let subtotal = 0;
+  let taxFree = 0;
   document.querySelectorAll('.detail-row').forEach(row => {
     const type = row.getAttribute('data-type');
+    let amount = 0;
     if (type === 'worker') {
       const qty = Number(row.querySelector('.detail-qty').value) || 0;
       const price = Number(row.querySelector('.detail-price').value) || 0;
-      const amount = qty * price;
+      amount = qty * price;
       row.querySelector('.detail-amount').textContent = amount.toLocaleString();
-      subtotal += amount;
     } else if (type === 'parking' || type === 'highway') {
-      const price = Number(row.querySelector('.detail-price').value) || 0;
-      if (row.querySelector('.detail-amount')) row.querySelector('.detail-amount').textContent = price.toLocaleString();
-      subtotal += price;
+      amount = Number(row.querySelector('.detail-price').value) || 0;
+      if (row.querySelector('.detail-amount')) row.querySelector('.detail-amount').textContent = amount.toLocaleString();
     } else if (type === 'material') {
-      const price = Number(row.querySelector('.detail-price').value) || 0;
-      subtotal += price;
+      amount = Number(row.querySelector('.detail-price').value) || 0;
     }
+    subtotal += amount;
+    if (isTaxFree(type)) taxFree += amount;
   });
-  const tax = Math.floor(subtotal * 0.1);
+  const tax = Math.floor((subtotal - taxFree) * 0.1);
   document.getElementById('subtotal').textContent = subtotal.toLocaleString() + '円';
+  document.getElementById('taxfree').textContent = taxFree.toLocaleString() + '円';
   document.getElementById('tax').textContent = tax.toLocaleString() + '円';
   document.getElementById('grand').textContent = (subtotal + tax).toLocaleString() + '円';
 }
@@ -433,8 +441,13 @@ function generatePDF() {
   Object.keys(company).forEach(k => { company[k] = escHtml(company[k]); });
 
   let subtotal = 0;
-  invoiceItems.forEach(i => subtotal += i.qty * i.price);
-  const tax = Math.floor(subtotal * 0.1);
+  let taxFree = 0;
+  invoiceItems.forEach(i => {
+    const amount = i.qty * i.price;
+    subtotal += amount;
+    if (isTaxFree(i.kind)) taxFree += amount;
+  });
+  const tax = Math.floor((subtotal - taxFree) * 0.1);
   const grand = subtotal + tax;
 
   let itemRows = '';
@@ -507,7 +520,11 @@ function generatePDF() {
             <td style="border:1px solid #999;padding:4px;text-align:right;">${subtotal.toLocaleString()}</td>
           </tr>
           <tr>
-            <td colspan="5" style="border:1px solid #999;padding:4px;text-align:right;">消費税　10%</td>
+            <td colspan="5" style="border:1px solid #999;padding:4px;text-align:right;">うち非課税（駐車場代・高速代）</td>
+            <td style="border:1px solid #999;padding:4px;text-align:right;">${taxFree.toLocaleString()}</td>
+          </tr>
+          <tr>
+            <td colspan="5" style="border:1px solid #999;padding:4px;text-align:right;">消費税　10%（非課税分を除く）</td>
             <td style="border:1px solid #999;padding:4px;text-align:right;">${tax.toLocaleString()}</td>
           </tr>
           <tr style="background:#f5f5f5;font-weight:bold;">
@@ -587,10 +604,12 @@ function fillInvoiceSheet(ws, company, items) {
   let row = TPL.rowFrom;
   let lastSite = null;
   let subtotal = 0;
+  let taxFree = 0;
   items.forEach(item => {
     const isWork = item.kind === 'worker';
     const amount = isWork ? item.qty * item.price : item.price;
     subtotal += amount;
+    if (isTaxFree(item.kind)) taxFree += amount;
     ws.getCell(TPL.cDate + row).value = null;
     // 現場名は各現場の最初の行だけに出す
     ws.getCell(TPL.cSite + row).value = item.site === lastSite ? null : item.site;
@@ -612,7 +631,9 @@ function fillInvoiceSheet(ws, company, items) {
       .forEach(col => { ws.getCell(col + r).value = null; });
   }
 
-  const tax = Math.floor(subtotal * 0.1);
+  // 駐車場代・高速代は非課税なので、消費税は小計から実費を除いた額にかける。
+  // ひな形の Y52（合計金額）は実費も含めた小計、Y53 は課税分の消費税。
+  const tax = Math.floor((subtotal - taxFree) * 0.1);
   const grand = subtotal + tax;
   ws.getCell(TPL.subtotal).value = subtotal;
   ws.getCell(TPL.tax).value = tax;
@@ -625,7 +646,7 @@ function fillInvoiceSheet(ws, company, items) {
   ws.getCell(TPL.bankNum).value = company.bNum || '';
   ws.getCell(TPL.bankHolder).value = company.bHolder || '';
 
-  return { rows: items.length, subtotal, tax, grand };
+  return { rows: items.length, subtotal, taxFree, tax, grand };
 }
 
 // 1MB ほどあるので、ボタンを押したときだけ読み込む
